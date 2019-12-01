@@ -1,4 +1,4 @@
-# PrecisionFDA NCI-CPTAC Multi-omics Enabled Sample Mislabeling Correction
+# PrecisionFDA - Mislabeling Correction Challenge
 
 ## Aim 
 Human sample labeling or annotation errors could arise during sample transferring, sample
@@ -27,3 +27,17 @@ x.pdf.
 * Additional outputs:
   1. All other visual analytic results.
   2. All other tables of results that are useful.
+
+## Summary of the Process
+### from Presentation Slides.pptx
+![](media/1.png)
+
+![](media/2.png)
+
+![](media/3.png)
+
+![](media/4.png)
+
+![](media/5.png)
+
+![](media/6.png)
