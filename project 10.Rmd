@@ -1,0 +1,410 @@
+---
+title: "STAT5003 Prject 1 - precisionFDA Challenge"
+author: "Group 10"
+output: html_document
+---
+
+##problem discription
+this project requires to use the correct samples to create a model on the base of 'train_pro' and 'train_cli' tables, and then evaluate the model using test dataset.
+## implemention
+1.we import all of the tables and deal with the missing values 'NA' in train and test 'pro' tables(here, use knnimputation to replace NAs with 5 nearest neighbors ). Secondly, we transform the two features in cli table to 4 classes and combine pro table with cli table(it is called 'data.train'). 
+2combine 'data.train' with sum_tab table, and remove the mismatched samples with 'mismatch' equals to 1, and then get the new table. We then do PCA and feature selection with the new dataset, but both of the two methods contribute less for this project, so we just use the dataset with 2697 feaures. 
+3.we use bagging, boosting, logistic regression, decision tree and knn to train a model on training set. Also, we create the benchmark model and get the accuracy of the models respectively. Compare the other 5 models with the benchmark, we find that the results are all better than that of benchmark. After which, we use testing data to validate the model. Here, confusion matrix and accuracy are used to evaluate the performance of the model. 
+4.The predictions from the testing data are used to predict the mislabelled samples in testing dataset. The procedure is combine the predictions of the 5 models, and count the same predicted lables of each sample, calculate the probability of each sample getting the correct label(the probability is max count of the labels/ sum count). If the probablility of the sample to get same labels is less than 0.5, we may recognize it to the mislabelled sample.
+
+## TRAIN DATA SET.
+remove manyNAS and then use KNN imputation to deal with miss values, after which,transpose the matrix.
+```{r}
+train_pro = read.delim(file = 'train_pro.tsv',header = TRUE)
+library(DMwR)
+train_pro <- train_pro[-manyNAs(train_pro),]
+train_pro <- knnImputation(train_pro, k = 5, scale = T, meth = "weighAvg", distData = NULL)
+train_pro <- data.frame(t(train_pro))
+
+```
+
+# read train set labels
+```{r}
+train_cli = read.delim(file = 'train_cli.tsv',header = TRUE)
+
+```
+
+# PCA for dimension reduction(not useful for this project)
+```{r}
+data.train.pca <- prcomp(train_pro,center = TRUE,scale. = TRUE)
+summary(data.train.pca)
+screeplot(data.train.pca,type = 'lines')
+#data.train.pca$rotation
+```
+## train set label: change 'gender' and 'msi' feature to 4 classes. Note that the label here should be of string format, or it would be a regression one when training the model.
+```{r}
+cls.cla <- c()
+for (i in 1:length(train_cli$sample)){
+  if(train_cli$gender[i]=='Male' & train_cli$msi[i] == "MSI-Low/MSS"){
+    cls.cla[i] = '0'
+  }else if(train_cli$gender[i]=='Female' & train_cli$msi[i] == "MSI-Low/MSS"){
+    cls.cla[i] = '1'
+  }else if(train_cli$gender[i]=='Male' & train_cli$msi[i] == "MSI-High"){
+    cls.cla[i] = '2'
+  }else if(train_cli$gender[i]=='Female' & train_cli$msi[i] == "MSI-High"){
+    cls.cla[i] = '3' }
+}
+
+## combine training data with labels.
+data.train <- cbind(train_pro,cls.cla)
+```
+
+##filter feature selection, but it still contributes little for this project.
+##more sophisticated approach based on t-test
+```{r, warning=FALSE, message=FALSE}
+#library(gplots)
+#library(caret)
+#library(class)
+#set.seed(123)
+#inTrain <- createDataPartition(data.train$cls.cla, p = .5)[[1]]
+#dataTrain <- data.train[ inTrain,]
+#dataTest  <- data.train[-inTrain,]
+#library(class)
+#dataTrain.byClass <- split(dataTrain[,-4119], dataTrain$cls.cla)
+
+## perform a t-test
+
+#feature.pvalues <- c()
+#for(i in 1:(ncol(dataTrain)-1)) {
+  #feature.pvalues <- c(feature.pvalues, t.test(dataTrain.byClass[[1]][,i], dataTrain.byClass[[2]][,i])$p.value)
+#}
+#names(feature.pvalues) <- colnames(dataTrain[,-4119])
+
+## filter the top 1000 most discriminative features based on p-values
+
+#filtered.features2 <- names(sort(feature.pvalues)[1:1000])
+#data.train <-data.train[,filtered.features2]
+#data.train <-cbind(data.train,cls.cla)
+```
+# read sum_tab_1 table
+```{r}
+sum_tab <- read.csv('sum_tab_1.csv', header = TRUE)
+```
+
+
+##use this as train set, included labels
+```{r}
+## combine training set with mismatch samples and then remove the mismatched labels, just retain samples with correct labels.
+newdata <-cbind(data.train,sum_tab$mismatch)
+newsample <-rownames(newdata)[newdata[,2699]==0]
+
+# this set is the one that used for training set.
+newtrain <- newdata[newsample,1:2698] 
+```
+
+
+
+
+
+#preprocessing of test set
+```{r}
+# testing dataset
+test_pro = read.delim(file = 'test_pro.tsv',header = TRUE)
+test_pro<- data.frame(t(test_pro))
+#test_pro = subset(test_pro, select=colnames(train_pro))
+
+## using KNN imputation to deal with NAs in testing set
+#test_pro = test_pro[,colnames(train_pro)]
+test_pro<- data.frame(t(test_pro))
+test_pro<- knnImputation(test_pro, k = 5, scale = T, meth = "weighAvg", distData = NULL)
+test_pro<- data.frame(t(test_pro))
+
+
+```
+
+##read test set labels
+```{r}
+test_cli <- read.delim(file = 'test_cli.tsv', header = TRUE)
+
+```
+
+## like training set, make the two category classes into 4 classes
+```{r}
+test.label <- c()
+for (i in 1:length(test_cli$sample)){
+  if(test_cli$gender[i]=='Male' & test_cli$msi[i] == "MSI-Low/MSS"){
+    test.label[i] = '0'
+  }else if(test_cli$gender[i]=='Female' & test_cli$msi[i] == "MSI-Low/MSS"){
+    test.label[i] = '1'
+  }else if(test_cli$gender[i]=='Male' & test_cli$msi[i] == "MSI-High"){
+    test.label[i] = '2'
+  }else if(test_cli$gender[i]=='Female' & test_cli$msi[i] == "MSI-High"){
+    test.label[i] = '3' }
+}
+
+```
+
+
+##Training model from training set
+#benchmark model
+# Training model from training set 10 FOLD
+```{r}
+library("class")
+```
+
+# random guessing benchmark
+```{r}
+# train model with training data
+pred.train.random_guess <- names(which.max(table(cls.cla)))
+pred.train.random_guess <- sample(c(0,1,2,3), size=length(newtrain$cls), replace=TRUE, prob=c(0.25,0.25,0.25,0.25))
+
+# check confusion matrix and accurcy
+confus.matrix <- table(real=newtrain$cls, predict=pred.train.random_guess)
+confus.matrix
+accuracy <- sum(diag(confus.matrix))/sum(confus.matrix) 
+accuracy
+```
+
+
+# majority class benchmark
+```{r}
+# train model with training data
+pred.train.majority <- names(which.max(table(cls.cla)))
+pred.train.majority <- rep(c(pred.train.majority), times = length(newtrain$cls))
+
+# check confusion matrix and accurcy
+confus.matrix <- table(real=newtrain$cls, predict=pred.train.majority)
+confus.matrix
+accuracy <- sum(diag(confus.matrix))/sum(confus.matrix) 
+accuracy
+```
+
+# train knn model
+```{r}
+# train model with training data
+pred.train.y <- knn(train=newtrain[,-2698], test=newtrain[,-2698], cl=newtrain$cls.cla, k=5, prob=TRUE)
+
+# check confusion matrix and accurcy
+confus.matrix <- table(real=newtrain$cls, predict=pred.train.y)
+confus.matrix
+accuracy <- sum(diag(confus.matrix))/sum(confus.matrix) 
+accuracy
+```
+
+
+#bagging
+```{r}
+library(adabag)
+```
+
+```{r}
+set.seed(1)
+model.bagging <-bagging(cls.cla~., data = newtrain)
+confus.matrix <- table(newtrain[,2698],predict(model.bagging,newtrain)$class)
+confus.matrix
+accuracy <-sum(diag(confus.matrix))/sum(confus.matrix)
+accuracy
+```
+ 
+#boosting
+
+```{r}
+set.seed(1)
+model.boost <-boosting(cls.cla~.,data = newtrain)
+confus.matrix <-table(newtrain[,2698],predict(model.boost,newtrain)$class)
+confus.matrix
+accuracy <-sum(diag(confus.matrix))/sum(confus.matrix)
+accuracy
+```
+
+#decision tree
+
+```{r}
+require(rpart)
+cart.model<- rpart( cls.cla ~., data=newtrain, method = "class")
+pred <- predict(cart.model,newtrain[, names(newtrain) != "cls.cla"],type = "class")
+table(real=newtrain$cls.cla, predict=pred)
+confus.matrix <- table(real=newtrain$cls.cla, predict=pred)
+accuracy <-sum(diag(confus.matrix))/sum(confus.matrix) 
+accuracy
+```
+
+## logistic regression
+
+```{r}
+library("nnet")
+## this code is for training multi-class model using logistic regression.
+glm.fit=multinom(newtrain$cls.cla~., data=newtrain,MaxNWts=16480)
+pred.logit = predict(glm.fit, newtrain[, names(newtrain) != "cls.cla"], "class")
+#pred_logit_class <- max.col(pred_logit) #!!!this line make class0-4 into class1-4
+confus.matrix <- table(real=newtrain$cls.cla, predict=pred.logit)
+confus.matrix
+accuracy <-sum(diag(confus.matrix))/sum(confus.matrix) 
+accuracy
+```
+
+## Training data Accuracy visualization 
+(barplot)
+All models except KNN scored an accuracy of above 88% with Logistic Regression and Adaboosting both had an accuracy score of 100%
+```{r}
+library(RColorBrewer)
+# accuracy of each classification model
+# bagging <- 95
+# Adaboosting <- 100
+# DT <- 88
+# LogitReg <- 100
+# knn <- 70
+
+x <- c(95,100,88,100,70)
+
+barplot(x,
+        col = brewer.pal(5, "Spectral"), 
+        main = "Training set accuracy",
+        xlab = "Classification Models",
+        ylab = "Accuracy",
+        ylim = c(0,110),
+        names.arg=c('bagging \n 95%','Adaboosting \n 100%','DecisionTree \n 88%','LogitReg \n 100%','KNN \n 70%')
+        )
+```
+
+
+# running model on TEST SET
+
+## knn on test set
+```{r}
+knn.pred.test <- knn(train=newtrain[,-2698], test=test_pro, cl=newtrain$cls.cla, k=5, prob=TRUE)
+knn.pred.test
+```
+
+###matrix
+```{r}
+# check confusion matrix and accurcy
+confus.matrix <- table(real=test.label, predict=knn.pred.test)
+confus.matrix
+accuracy <- sum(diag(confus.matrix))/sum(confus.matrix) 
+accuracy
+
+```
+
+
+## BAGGING on test set
+```{r}
+bagging.pred.test <- predict(model.bagging,test_pro)$class
+bagging.pred.test
+```
+
+##matrix
+```{r}
+confus.matrix <- table(real=test.label,predict=as.integer(bagging.pred.test))
+confus.matrix
+accuracy <- sum(diag(confus.matrix))/sum(confus.matrix)
+accuracy
+```
+
+```{r}
+require(rpart)
+```
+
+## BOOSTING on test set
+```{r}
+boosting.pred.test <- predict(model.boost,test_pro)$class
+boosting.pred.test
+```
+
+##matrix
+```{r}
+confus.matrix <-table(real=test.label,predict=boosting.pred.test)
+confus.matrix
+accuracy <- sum(diag(confus.matrix))/sum(confus.matrix)
+accuracy
+```
+
+## DECISION TREE on test set
+####prediction label
+
+```{r}
+#pred.dt.test.y <- predict(cart.model, test_pro, "prob")
+#pred.dt.test.class <- max.col(pred.dt.test.y) #!!this line could lead to class 1-4 even if the class input is class0-3
+#pred.dt.test.class
+
+pred.dt.test.class <- predict(cart.model,test_pro,type = "class")
+pred.dt.test.class
+```
+
+###matrix
+```{r}
+table(real=test.label, predict=pred.dt.test.class)
+confus.matrix <- table(real=test.label, predict=pred.dt.test.class)
+accuracy <- sum(diag(confus.matrix))/sum(confus.matrix) 
+accuracy
+```
+
+
+## logistic regression on test set
+####prediction label
+```{r}
+pred.test.logit.class <- predict(glm.fit, test_pro, "class")
+pred.test.logit.class
+```
+
+###matrix
+```{r}
+confus.matrix <- table(real=test.label, predict=pred.test.logit.class)
+confus.matrix
+accuracy <- sum(diag(confus.matrix))/sum(confus.matrix) 
+accuracy
+```
+
+## using above results of 5 models to calculate the probability of testing samples that would have mismatched labels.
+```{r}
+allresult <- cbind(bagging.pred.test,boosting.pred.test,pred.dt.test.class,pred.test.logit.class, knn.pred.test)
+probability <- c()
+for (i in 1:80){
+  count <- table(allresult[i,])
+  probability <- c(probability, max(count)/5)
+}
+
+prob_table <- table(probability)
+prob_table
+
+```
+
+## Distribution of the prediction of mislabeled data points.
+We tabulated the predicted labels of the test dataset from the 5 models and plot the probabilities of the entries having the same predicted class. Accoring to the result, 57 entries have 60% probability or higher having the same predicted class while 23 entries have 40% or less having the same predicted class. From this distribution, It could be deduced that potentially there are 23 entries that might possible be mislabeled. The table on the bottom shows the possible mislabeled entry.
+```{r}
+barplot(prob_table,
+        width = 2,
+        col = c("deepskyblue3"),
+        border =NA, 
+        ylim = c(0,50),
+        main = "Distribution of probability of same predicted class amongst 5 models",
+        xlab = "Probability of predicted class majority",
+        ylab = "Frequency count"
+        )
+
+```
+
+## a testing sample with the probability that is less than 0.5 may have mismatched labels. The following result shows these mislabeled samples.
+```{r}
+## the probability of eacn sample that has same predicted labels
+which(probability==0.2)
+which(probability==0.4)
+which(probability==0.6)
+which(probability==0.8)
+which(probability==1)
+```
+
+## output:Probability of each sample been mislabelled
+
+#testing samples with probability of 0.8 been mislabelled:
+28
+
+#testing samples with probability of 0.6 been mislabelled:
+1  5  6  8 13 19 22 26 27 30 35 40 45 46 47 48 49 52 54 56 69 76
+
+#testing samples with probability of 0.4 been mislabelled:
+2  3  4  7  9 10 11 12 14 16 17 18 20 21 23 24 25 29 31 32 33 34 36 37 41 42 43 44 50 53 58 59 60 61 62 63 64 65 67 68 70 71 72 73 74 75 77 78 79 80
+
+#testing samples with probability of 0.2 been mislabelled:
+39 51 55 57 66
+
+#testing samples with probability of 0 been mislabelled:
+15 38
+
+##output:predicted mislabelled samples from testing dataset
+1  5  6  8 13 19 22 26 27 28 30 35 40 45 46 47 48 49 52 54 56 69 76
